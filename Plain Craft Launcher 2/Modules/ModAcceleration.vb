@@ -43,9 +43,8 @@ Public Module ModAcceleration
             Try
                 Await Xray.RefreshAndPrepareAsync(Settings.AccelerationTopN)
                 Xray.StartProxy(Settings.AccelerationPort)
-                HttpWebProxyFactory.NotifyAccelerationChanged(True)
+                DownloadHttpClientFactory.NotifyAccelerationChanged(True, Settings.AccelerationPort)
             Catch ex As Exception
-                ' 失败时静默降级，不阻塞启动
                 Debug.WriteLine($"[加速] 自动启动失败: {ex.Message}")
             End Try
         End If
