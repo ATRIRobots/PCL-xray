@@ -19,64 +19,61 @@ jobs:
           submodules: true
           fetch-depth: 0
 
-      # 2. 安装 .NET SDK 10.0（PCL 开发指南要求 ≥10.0）
+      # 2. 安装 .NET SDK 10.0（PCL 开发要求）
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
       # 3. 下载 Xray 二进制并放入 Resources/Xray/
-      #    仓库不提交 exe，CI 构建时从上游 Release 拉取
       - name: Prepare Xray binaries
         shell: pwsh
         run: |
           $dir = "Plain Craft Launcher 2/Resources/Xray"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
-          if ((Test-Path "$dir/xray-knife.exe") -and (Test-Path "$dir/xray-core.exe")) {
-            Write-Host "Binaries already present, skipping download."
-            exit 0
-          }
-
-          # ---- xray-knife ----
-          # 若 latest 资产名变动导致 404，去 Release 页面复制真实文件名替换此 URL
+          # 下载 xray-knife
           $knifeUrl = "https://github.com/lilendian0x00/xray-knife/releases/download/v11.4.1/Xray-knife-windows-64.zip"
           Invoke-WebRequest -Uri $knifeUrl -OutFile "$env:TEMP\knife.zip"
           Expand-Archive "$env:TEMP\knife.zip" -DestinationPath "$env:TEMP\knife" -Force
 
-          # ---- Xray-core ----
+          # 下载 Xray-core
           $coreUrl = "https://github.com/XTLS/Xray-core/releases/download/v26.10.21/Xray-windows-64.zip"
           Invoke-WebRequest -Uri $coreUrl -OutFile "$env:TEMP\core.zip"
           Expand-Archive "$env:TEMP\core.zip" -DestinationPath "$env:TEMP\core" -Force
 
-          # 递归查找 exe，避免压缩包内多一层目录
+          # 查找并重命名
           $knifeExe = Get-ChildItem "$env:TEMP\knife" -Filter "xray-knife*.exe" -Recurse | Select-Object -First 1
           $coreExe  = Get-ChildItem "$env:TEMP\core"  -Filter "xray.exe"        -Recurse | Select-Object -First 1
 
-          if (-not $knifeExe) { throw "未在 xray-knife 压缩包中找到 exe" }
-          if (-not $coreExe)  { throw "未在 Xray-core 压缩包中找到 xray.exe" }
+          if (-not $knifeExe) { throw "未找到 xray-knife.exe" }
+          if (-not $coreExe)  { throw "未找到 xray.exe" }
 
-          # 关键：Xray-core 解压出来叫 xray.exe，必须重命名为 xray-core.exe
-          # 与 ModAcceleration.vb 中 ExtractIfMissing 的文件名保持一致
           Copy-Item $knifeExe.FullName "$dir\xray-knife.exe" -Force
           Copy-Item $coreExe.FullName  "$dir\xray-core.exe"  -Force
 
-          Write-Host "Xray binaries prepared:"
-          Get-ChildItem $dir | Format-Table Name, Length
-
-      # 4. 还原 NuGet 依赖
+      # 4. 还原依赖
       - name: Restore
         run: dotnet restore "Plain Craft Launcher 2.sln"
 
-      # 5. 构建 Release
+      # 5. 编译（因为没嵌入大文件，这一步不会再崩溃）
       - name: Build
         run: dotnet build "Plain Craft Launcher 2.sln" -c Release --no-restore
 
-      # 6. 上传构建产物
+      # 6. 把 exe 复制到最终的产物目录中，保证压缩包解压即用
+      - name: Copy Xray to Output
+        shell: pwsh
+        run: |
+          $src = "Plain Craft Launcher 2/Resources/Xray"
+          # 默认生成路径，如果后续 PCL 更改了框架版本，请把 net8.0-windows 改为实际目录名
+          $dst = "Plain Craft Launcher 2/bin/Release/net8.0-windows/Resources/Xray"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "$src/*.exe" -Destination $dst -Force
+
+      # 7. 上传构建产物
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PCL-Xray-${{ github.sha }}
-          path: |
-            Plain Craft Launcher 2/bin/Release/
+          path: "Plain Craft Launcher 2/bin/Release/net8.0-windows/"
           if-no-files-found: error
