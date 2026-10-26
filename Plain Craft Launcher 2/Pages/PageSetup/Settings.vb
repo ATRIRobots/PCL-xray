@@ -123,6 +123,19 @@ Public Class Settings
         New Setting("ToolDownloadCert", False, Source:=Sources.Registry, OnChanged:=AddressOf ModNet.ShouldValidateSslCertificateOnLogin),
         New Setting("ToolDownloadMod", 2, Source:=Sources.Registry),
         New Setting("ToolModLocalNameStyle", 0, Source:=Sources.Registry),
+        '────────────── 网络加速（Xray）──────────────
+        ' 总开关：为 True 时，启动 PCL 会自动注册内置订阅、刷新节点并启动代理
+        New Setting("AccelerationEnabled", False, Source:=Sources.Registry),
+        ' 外部订阅输入框：加密存储，避免私有节点的 Token 以明文落在注册表
+        ' xray-knife 的 subs 子系统自己维护订阅数据库，此设置仅用于持久化 UI 输入框内容
+        New Setting("AccelerationSubscriptionUrl", "", Source:=Sources.Registry, Encrypted:=True),
+        ' 测速后保留的最优节点数
+        New Setting("AccelerationTopN", 10, Source:=Sources.Registry),
+        ' SOCKS5 监听端口
+        New Setting("AccelerationPort", 1080, Source:=Sources.Registry),
+        ' 自动更新间隔（小时），0 表示关闭自动更新
+        New Setting("AccelerationAutoUpdateHours", 0, Source:=Sources.Registry),
+        '──────────────────────────────────────────────
         New Setting("ToolUpdateRelease", False, Source:=Sources.Registry),
         New Setting("ToolUpdateSnapshot", False, Source:=Sources.Registry),
         New Setting("ToolUpdateReleaseLast", "", Source:=Sources.Registry),
