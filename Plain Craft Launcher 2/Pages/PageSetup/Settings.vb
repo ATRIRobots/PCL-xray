@@ -123,6 +123,11 @@ Public Class Settings
         New Setting("ToolDownloadCert", False, Source:=Sources.Registry, OnChanged:=AddressOf ModNet.ShouldValidateSslCertificateOnLogin),
         New Setting("ToolDownloadMod", 2, Source:=Sources.Registry),
         New Setting("ToolModLocalNameStyle", 0, Source:=Sources.Registry),
+        New Setting("AccelerationEnabled", False, Source:=Sources.Registry),
+        New Setting("AccelerationSubscriptionUrl", "", Source:=Sources.Registry, Encrypted:=True),
+        New Setting("AccelerationTopN", 10, Source:=Sources.Registry),
+        New Setting("AccelerationPort", 1080, Source:=Sources.Registry),
+        New Setting("AccelerationAutoUpdateHours", 0, Source:=Sources.Registry),
         ' 网络加速 (Xray)
         ' 总开关：为 True 时，启动 PCL 会自动注册内置订阅、刷新节点并启动代理
         New Setting("AccelerationEnabled", False, Source:=Sources.Registry),
