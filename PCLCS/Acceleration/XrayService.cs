@@ -1,6 +1,11 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace PCL.Acceleration;
 
@@ -33,7 +38,8 @@ public sealed class XrayService : IDisposable
     public async Task EnsureBuiltinSubscriptionAsync(string builtinUrl)
     {
         var subs = await ListSubscriptionsAsync();
-        if (subs.Any(s => s.Contains(BuiltinRemark, StringComparison.OrdinalIgnoreCase)))
+        // 旧框架没有 string.Contains(string, StringComparison)，改用 IndexOf
+        if (subs.Any(s => s.IndexOf(BuiltinRemark, StringComparison.OrdinalIgnoreCase) >= 0))
             return;
         await RunKnifeAsync($"subs add --url \"{builtinUrl}\" --remark \"{BuiltinRemark}\"");
     }
@@ -45,7 +51,7 @@ public sealed class XrayService : IDisposable
             ? $"User_{DateTime.Now:yyyyMMddHHmmss}"
             : remark.Trim();
         var subs = await ListSubscriptionsAsync();
-        if (subs.Any(s => s.Contains(url, StringComparison.OrdinalIgnoreCase)))
+        if (subs.Any(s => s.IndexOf(url, StringComparison.OrdinalIgnoreCase) >= 0))
             return false;
         await RunKnifeAsync($"subs add --url \"{url}\" --remark \"{name}\"");
         return true;
@@ -55,7 +61,7 @@ public sealed class XrayService : IDisposable
     public async Task RemoveSubscriptionAsync(string keyword)
     {
         var subs = await ListSubscriptionsAsync();
-        var target = subs.FirstOrDefault(s => s.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+        var target = subs.FirstOrDefault(s => s.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0);
         if (target == null) return;
         var remark = ExtractRemark(target);
         if (!string.IsNullOrEmpty(remark))
@@ -65,8 +71,11 @@ public sealed class XrayService : IDisposable
     public async Task<List<string>> ListSubscriptionsAsync()
     {
         var output = await RunKnifeAsync("subs show");
-        return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        // 旧框架没有 Split(char, StringSplitOptions) 重载，改用 Split(char[], StringSplitOptions)
+        return output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .ToList();
     }
 
     // ─────────────────────── 拉取 + 测速择优 ───────────────────────
@@ -91,7 +100,11 @@ public sealed class XrayService : IDisposable
             .Select(l => l.Split(','))
             .Where(p => p.Length >= 2)
             .OrderByDescending(p =>
-                double.TryParse(p[^1], NumberStyles.Any, CultureInfo.InvariantCulture, out var s) ? s : 0)
+            {
+                // 旧框架不支持从末尾索引 ^1，改用显式 p.Length - 1
+                var last = p[p.Length - 1];
+                return double.TryParse(last, NumberStyles.Any, CultureInfo.InvariantCulture, out var s) ? s : 0;
+            })
             .Take(topN)
             .Select(p => p[0].Trim('"'))
             .Where(link =>
@@ -102,7 +115,8 @@ public sealed class XrayService : IDisposable
         if (validLinks.Count == 0)
             throw new InvalidOperationException("测速后没有可用节点，请检查订阅是否有效。");
 
-        await File.WriteAllLinesAsync(validPath, validLinks, Encoding.UTF8);
+        // 旧框架没有 File.WriteAllLinesAsync，改用 Task.Run 包装同步 API
+        await Task.Run(() => File.WriteAllLines(validPath, validLinks, Encoding.UTF8));
         return validLinks.Count;
     }
 
@@ -150,7 +164,6 @@ public sealed class XrayService : IDisposable
         if (!File.Exists(validPath))
             throw new FileNotFoundException("未找到 valid_nodes.txt，请先刷新订阅并测速。", validPath);
 
-        // 注意：v11+ 使用 proxy inbound；旧版使用 proxy
         var psi = new ProcessStartInfo
         {
             FileName = _knifePath,
@@ -162,22 +175,30 @@ public sealed class XrayService : IDisposable
             WorkingDirectory = _workingDir
         };
 
-        _proxyProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        _proxyProcess.OutputDataReceived += (_, e) => { if (e.Data != null) LogReceived?.Invoke(e.Data); };
-        _proxyProcess.ErrorDataReceived += (_, e) => { if (e.Data != null) LogReceived?.Invoke("[ERR] " + e.Data); };
-        _proxyProcess.Start();
-        _proxyProcess.BeginOutputReadLine();
-        _proxyProcess.BeginErrorReadLine();
+        // 用局部变量消除 CS8602（_proxyProcess 可能为 null 的警告）
+        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        proc.OutputDataReceived += (_, e) => { if (e.Data != null) LogReceived?.Invoke(e.Data); };
+        proc.ErrorDataReceived += (_, e) => { if (e.Data != null) LogReceived?.Invoke("[ERR] " + e.Data); };
+        proc.Start();
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
+        _proxyProcess = proc;
     }
 
     public void StopProxy()
     {
-        if (_proxyProcess is { HasExited: false })
+        var proc = _proxyProcess;
+        if (proc is { HasExited: false })
         {
-            try { _proxyProcess.Kill(true); _proxyProcess.WaitForExit(3000); }
+            try
+            {
+                // 旧框架没有 Kill(bool)，改用无参 Kill()
+                proc.Kill();
+                proc.WaitForExit(3000);
+            }
             catch { /* ignored */ }
         }
-        _proxyProcess?.Dispose();
+        proc?.Dispose();
         _proxyProcess = null;
     }
 
@@ -188,7 +209,7 @@ public sealed class XrayService : IDisposable
         var idx = subsLine.IndexOf(']');
         if (idx > 0 && subsLine.StartsWith("["))
             return subsLine.Substring(1, idx - 1);
-        var parts = subsLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = subsLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
         return parts.Length > 0 ? parts[0] : null;
     }
 
@@ -204,10 +225,16 @@ public sealed class XrayService : IDisposable
             RedirectStandardError = true,
             WorkingDirectory = _workingDir
         };
-        using var p = Process.Start(psi)!;
+        using var p = Process.Start(psi);
+        if (p == null)
+            throw new InvalidOperationException($"无法启动 xray-knife：{args}");
+
         var stdout = await p.StandardOutput.ReadToEndAsync();
         var stderr = await p.StandardError.ReadToEndAsync();
-        await p.WaitForExitAsync();
+
+        // 旧框架没有 WaitForExitAsync，改用 Task.Run 包装同步版本
+        await Task.Run(() => p.WaitForExit());
+
         if (p.ExitCode != 0)
             throw new InvalidOperationException($"xray-knife 执行失败 ({args}):\n{stderr}\n{stdout}");
         return stdout;
