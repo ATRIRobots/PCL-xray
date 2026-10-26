@@ -46,71 +46,6 @@
                     </Grid>
                 </StackPanel>
             </local:MyCard>
-
-            <!-- ▼▼▼ 新增：网络加速 ▼▼▼ -->
-            <local:MyCard Margin="0,0,0,15" Title="网络加速">
-                <Grid Margin="25,40,25,20">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
-                        <ColumnDefinition Width="1*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="22" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="28" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="28" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="22" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <!-- 总开关 -->
-                    <TextBlock Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="下载加速" Margin="0,0,25,0" />
-                    <local:MyCheckBox Grid.Row="0" Grid.Column="1" x:Name="CheckAccelerationEnabled"
-                                      Text="启用 Xray 加速（仅下载走代理）" Height="22"
-                                      ToolTip="仅让 Minecraft 文件下载走 Xray 代理，微软登录、版本列表、Mod 搜索等请求继续直连。&#xa;首次使用请先拉取节点并测速，再启动加速。" />
-
-                    <!-- 外部订阅链接 -->
-                    <TextBlock Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Left" Text="外部订阅链接" Margin="0,0,25,0" />
-                    <local:MyTextBox Grid.Row="2" Grid.Column="1" x:Name="TextAccelerationSubscription"
-                                     HintText="粘贴订阅链接后可点击下方按钮导入，留空则仅使用内置公共节点池" />
-
-                    <!-- 订阅与测速按钮 -->
-                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
-                        <local:MyButton x:Name="BtnAccelerationImport" MinWidth="130" Padding="13,0"
-                                        Text="导入外部订阅" Margin="0,0,15,0"
-                                        ToolTip="将上方链接导入到 xray-knife 的订阅数据库，与内置节点池一起管理。&#xa;导入成功后可重复导入不同的订阅。" />
-                        <local:MyButton x:Name="BtnAccelerationRefresh" MinWidth="150" Padding="13,0"
-                                        Text="拉取节点并测速择优"
-                                        ToolTip="从所有已导入的订阅（含内置节点池）拉取节点，测速并按速度排序后取前 N 个节点作为代理池。&#xa;这一步会消耗一些时间，请耐心等待。" />
-                    </StackPanel>
-
-                    <!-- 自动更新间隔 -->
-                    <TextBlock Grid.Row="6" VerticalAlignment="Center" HorizontalAlignment="Left" Text="自动更新间隔" Margin="0,0,25,0" />
-                    <local:MyTextBox Grid.Row="6" Grid.Column="1" x:Name="TextAccelerationAutoUpdate"
-                                     HintText="单位小时，0 表示关闭自动更新，建议填 6" />
-
-                    <!-- 代理状态 -->
-                    <TextBlock Grid.Row="8" VerticalAlignment="Center" HorizontalAlignment="Left" Text="代理状态" Margin="0,0,25,0" />
-                    <TextBlock Grid.Row="8" Grid.Column="1" x:Name="TextAccelerationStatus"
-                               VerticalAlignment="Center" Text="未启动" Opacity="0.6" />
-
-                    <!-- 启停按钮 + 日志 -->
-                    <StackPanel Grid.Row="10" Grid.Column="1">
-                        <local:MyButton x:Name="BtnAccelerationToggle" MinWidth="130" Padding="13,0"
-                                        HorizontalAlignment="Left" Text="启动加速" Margin="0,0,0,10" />
-                        <local:MyTextBox x:Name="TextAccelerationLog" Height="100" AcceptsReturn="True"
-                                         IsReadOnly="True" VerticalScrollBarVisibility="Auto"
-                                         TextWrapping="Wrap" HintText="加速日志会在这里实时输出..." />
-                    </StackPanel>
-                </Grid>
-            </local:MyCard>
-            <!-- ▲▲▲ 新增：网络加速 ▲▲▲ -->
-
             <local:MyCard Margin="0,0,0,15" Title="社区资源">
                 <StackPanel Margin="25,37,25,12">
                     <Grid>
@@ -229,6 +164,23 @@
                     </Grid>
                 </Grid>
             </local:MyCard>
+
+            <!-- <local:MyCard x:Name="CardMain" Margin="0,15" Title="全局设置">
+                <StackPanel Margin="25,40,25,15">
+                    <Grid x:Name="PanMainLang" Height="28" Margin="0,0,0,10" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="语言" Margin="0,0,25,0" />
+                        <local:MyComboBox x:Name="ComboBackgroundSuit" Tag="UiBackgroundSuit" HorizontalAlignment="Left" Width="170" Grid.Column="1">
+                            <local:MyComboBoxItem Content="简体中文" Tag="zh_CN" IsSelected="True" />
+                            <local:MyComboBoxItem Content="繁體中文" Tag="zh_HK" />
+                            <local:MyComboBoxItem Content="English" Tag="en_US" />
+                        </local:MyComboBox>
+                    </Grid>
+                </StackPanel>
+            </local:MyCard> -->
             <local:MyCard x:Name="CardDebug" Margin="0,0,0,15" Title="调试选项" CanSwap="True" IsSwapped="True">
                 <StackPanel Margin="25,40,25,15">
                     <Grid x:Name="PanDebugAnim" Height="22" Margin="0,0,0,10">
