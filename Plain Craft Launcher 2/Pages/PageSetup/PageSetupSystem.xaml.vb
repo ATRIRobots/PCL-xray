@@ -21,7 +21,6 @@ Public Class PageSetupSystem
         AniControlEnabled += 1
         Reload()
         SliderLoad()
-        InitAccelerationUi()
         AniControlEnabled -= 1
 
     End Sub
@@ -95,7 +94,7 @@ Public Class PageSetupSystem
         If ComboSystemUpdate.SelectedIndex <> 3 Then Return
         If MyMsgBox("若选择此项，即使在启动器将来出现严重问题时，你也无法获取更新并获得修复。" & vbCrLf &
                     "例如，如果官方修改了登录方式，从而导致现有启动器无法登录，你可能就会因为无法更新而无法开始游戏。" & vbCrLf & vbCrLf &
-                    "一般选择 仅在有重大漏洞更新时提示 就可以让你尽量不受打扰了。" & vbCrLf &
+                    "一般选择 仅在有重大漏洞更新时显示提示 就可以让你尽量不受打扰了。" & vbCrLf &
                     "除非你在制作服务器整合包，或时常手动更新启动器，否则极度不推荐选择此项！", "警告", "我知道我在做什么", "取消", IsWarn:=True) = 2 Then
             If e.RemovedItems.Count > 0 Then ComboSystemUpdate.SelectedItem = e.RemovedItems(0)
         End If
@@ -127,163 +126,6 @@ Public Class PageSetupSystem
     End Sub
     Private Sub BtnSystemSettingImp_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnSystemSettingImp.Click
         Hint("该功能尚在开发中！")
-    End Sub
-
-#End Region
-
-#Region "网络加速"
-
-    Private _accelerationUiBound As Boolean = False
-
-    ''' <summary>
-    ''' 初始化「网络加速」区域的 UI 状态。
-    ''' 只在首次加载页面时执行一次，避免重复绑定日志事件。
-    ''' </summary>
-    Private Sub InitAccelerationUi()
-        If _accelerationUiBound Then Return
-        _accelerationUiBound = True
-
-        '回读状态
-        CheckAccelerationEnabled.Checked = Settings.Get(Of Boolean)("AccelerationEnabled")
-        TextAccelerationSubscription.Text = Settings.Get(Of String)("AccelerationSubscriptionUrl")
-        TextAccelerationAutoUpdate.Text = Settings.Get(Of Integer)("AccelerationAutoUpdateHours").ToString()
-
-        '实时日志
-        AddHandler ModAcceleration.Xray.LogReceived,
-            Sub(msg)
-                RunInUi(
-                Sub()
-                    If TextAccelerationLog Is Nothing Then Return
-                    TextAccelerationLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {msg}{vbCrLf}")
-                    TextAccelerationLog.ScrollToEnd()
-                End Sub)
-            End Sub
-
-        '代理已在运行（例如从其他页面启动后返回本页）时同步 UI
-        If ModAcceleration.Xray.IsRunning Then
-            BtnAccelerationToggle.Text = "停止加速"
-            TextAccelerationStatus.Text = $"代理运行中 :{Settings.Get(Of Integer)("AccelerationPort")}"
-            TextAccelerationStatus.Opacity = 1
-        Else
-            BtnAccelerationToggle.Text = "启动加速"
-            TextAccelerationStatus.Text = "未启动"
-            TextAccelerationStatus.Opacity = 0.6
-        End If
-    End Sub
-
-    ''' <summary>
-    ''' 总开关勾选状态变化。
-    ''' 勾选本身不代表代理已启动，只是记录用户意图；实际启停由下方按钮负责。
-    ''' </summary>
-    Private Sub CheckAccelerationEnabled_Change() Handles CheckAccelerationEnabled.Change
-        If AniControlEnabled <> 0 Then Return
-        Settings.Set("AccelerationEnabled", CheckAccelerationEnabled.Checked)
-        If CheckAccelerationEnabled.Checked AndAlso Not ModAcceleration.Xray.IsRunning Then
-            Hint("已记录加速开关。请点击下方「启动加速」按钮以实际启动代理。", HintType.Blue)
-        End If
-    End Sub
-
-    ''' <summary>
-    ''' 导入外部订阅到 xray-knife 的订阅数据库。
-    ''' </summary>
-    Private Async Sub BtnAccelerationImport_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnAccelerationImport.Click
-        Dim url = If(TextAccelerationSubscription.Text, "").Trim()
-        If String.IsNullOrEmpty(url) Then
-            Hint("请先在上方输入外部订阅链接", HintType.Blue)
-            Return
-        End If
-        BtnAccelerationImport.IsEnabled = False
-        Try
-            ModAcceleration.EnsureAccelerationReady()
-            Dim added = Await ModAcceleration.Xray.ImportExternalSubscriptionAsync(url)
-            If added Then
-                Settings.Set("AccelerationSubscriptionUrl", url)
-                Hint("外部订阅已导入，请点击「拉取节点并测速择优」使其生效。", HintType.Green)
-            Else
-                Hint("该订阅已存在于数据库中，未重复导入。", HintType.Blue)
-            End If
-        Catch ex As Exception
-            Hint("导入外部订阅失败：" & ex.Message, HintType.Red)
-            Logger.Warn(ex, "导入外部订阅失败")
-        Finally
-            BtnAccelerationImport.IsEnabled = True
-        End Try
-    End Sub
-
-    ''' <summary>
-    ''' 从所有已导入的订阅（含内置节点池）拉取节点并测速择优。
-    ''' </summary>
-    Private Async Sub BtnAccelerationRefresh_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnAccelerationRefresh.Click
-        BtnAccelerationRefresh.IsEnabled = False
-        Dim oldStatus = TextAccelerationStatus.Text
-        Dim oldOpacity = TextAccelerationStatus.Opacity
-        TextAccelerationStatus.Text = "正在拉取节点并测速，请稍候..."
-        TextAccelerationStatus.Opacity = 1
-        Try
-            ModAcceleration.EnsureAccelerationReady()
-            Dim count = Await ModAcceleration.Xray.RefreshAndPrepareAsync(Settings.Get(Of Integer)("AccelerationTopN"))
-            Hint($"已拉取节点并测速，择优保留 {count} 个节点。", HintType.Green)
-            TextAccelerationStatus.Text = If(ModAcceleration.Xray.IsRunning,
-                $"代理运行中 :{Settings.Get(Of Integer)("AccelerationPort")}",
-                "节点已就绪，可点击「启动加速」")
-            TextAccelerationStatus.Opacity = 1
-        Catch ex As Exception
-            Hint("测速择优失败：" & ex.Message, HintType.Red)
-            Logger.Warn(ex, "测速择优失败")
-            TextAccelerationStatus.Text = "测速失败"
-            TextAccelerationStatus.Opacity = 0.6
-        Finally
-            BtnAccelerationRefresh.IsEnabled = True
-        End Try
-    End Sub
-
-    ''' <summary>
-    ''' 启动或停止 Xray 代理。
-    ''' 启动后需要通知 DownloadHttpClientFactory 重建下载专用 HttpClient。
-    ''' </summary>
-    Private Sub BtnAccelerationToggle_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnAccelerationToggle.Click
-        Try
-            ModAcceleration.EnsureAccelerationReady()
-            If ModAcceleration.Xray.IsRunning Then
-                ModAcceleration.Xray.StopProxy()
-                DownloadHttpClientFactory.NotifyAccelerationChanged(False, 0)
-                BtnAccelerationToggle.Text = "启动加速"
-                TextAccelerationStatus.Text = "未启动"
-                TextAccelerationStatus.Opacity = 0.6
-                CheckAccelerationEnabled.Checked = False
-                Settings.Set("AccelerationEnabled", False)
-            Else
-                Dim port = Settings.Get(Of Integer)("AccelerationPort")
-                ModAcceleration.Xray.StartProxy(port)
-                DownloadHttpClientFactory.NotifyAccelerationChanged(True, port)
-                BtnAccelerationToggle.Text = "停止加速"
-                TextAccelerationStatus.Text = $"代理运行中 :{port}"
-                TextAccelerationStatus.Opacity = 1
-                CheckAccelerationEnabled.Checked = True
-                Settings.Set("AccelerationEnabled", True)
-            End If
-        Catch ex As Exception
-            Hint("启动加速失败：" & ex.Message & vbCrLf &
-                 "请先点击「拉取节点并测速择优」生成可用节点，并确认端口 " &
-                 Settings.Get(Of Integer)("AccelerationPort") & " 未被占用。", HintType.Red)
-            Logger.Warn(ex, "启动加速失败")
-        End Try
-    End Sub
-
-    ''' <summary>
-    ''' 自动更新间隔变化。
-    ''' </summary>
-    Private Sub TextAccelerationAutoUpdate_TextChanged(sender As Object, e As TextChangedEventArgs) Handles TextAccelerationAutoUpdate.TextChanged
-        If AniControlEnabled <> 0 Then Return
-        Dim hours As Integer
-        If Not Integer.TryParse(TextAccelerationAutoUpdate.Text, hours) Then Return
-        If hours < 0 Then Return
-        Settings.Set("AccelerationAutoUpdateHours", hours)
-        If hours > 0 Then
-            ModAcceleration.Xray.EnableAutoUpdate(hours, Settings.Get(Of Integer)("AccelerationTopN"))
-        Else
-            ModAcceleration.Xray.DisableAutoUpdate()
-        End If
     End Sub
 
 #End Region
