@@ -17,7 +17,6 @@ public sealed class XrayService : IDisposable
     public bool IsRunning => _proxyProcess is { HasExited: false };
     public event Action<string>? LogReceived;
 
-    // 内置节点池的固定 remark，用于识别和防止重复添加
     private const string BuiltinRemark = "AutoMergePublicNodes";
 
     public void Initialize(string workingDir, string knifePath, string corePath)
@@ -30,35 +29,34 @@ public sealed class XrayService : IDisposable
 
     // ─────────────────────────── 订阅管理 ───────────────────────────
 
-    /// <summary>确保内置节点池订阅已存在于 xray-knife 数据库中。</summary>
+    /// <summary>确保内置节点池订阅已存在（幂等）。</summary>
     public async Task EnsureBuiltinSubscriptionAsync(string builtinUrl)
     {
         var subs = await ListSubscriptionsAsync();
         if (subs.Any(s => s.Contains(BuiltinRemark, StringComparison.OrdinalIgnoreCase)))
             return;
-
         await RunKnifeAsync($"subs add --url \"{builtinUrl}\" --remark \"{BuiltinRemark}\"");
     }
 
-    /// <summary>导入外部订阅。用户可传入任意订阅链接，自动去重。</summary>
+    /// <summary>导入外部订阅，自动去重。</summary>
     public async Task<bool> ImportExternalSubscriptionAsync(string url, string? remark = null)
     {
-        var name = string.IsNullOrWhiteSpace(remark) ? $"User_{DateTime.Now:yyyyMMddHHmmss}" : remark.Trim();
+        var name = string.IsNullOrWhiteSpace(remark)
+            ? $"User_{DateTime.Now:yyyyMMddHHmmss}"
+            : remark.Trim();
         var subs = await ListSubscriptionsAsync();
         if (subs.Any(s => s.Contains(url, StringComparison.OrdinalIgnoreCase)))
-            return false; // 已存在
-
+            return false;
         await RunKnifeAsync($"subs add --url \"{url}\" --remark \"{name}\"");
         return true;
     }
 
-    /// <summary>移除一条订阅（按 remark 或 URL 模糊匹配）。</summary>
+    /// <summary>按 remark 或 URL 模糊匹配移除订阅。</summary>
     public async Task RemoveSubscriptionAsync(string keyword)
     {
         var subs = await ListSubscriptionsAsync();
         var target = subs.FirstOrDefault(s => s.Contains(keyword, StringComparison.OrdinalIgnoreCase));
         if (target == null) return;
-        // subs remove 需要匹配 ID 或 remark，这里用 remark 匹配
         var remark = ExtractRemark(target);
         if (!string.IsNullOrEmpty(remark))
             await RunKnifeAsync($"subs remove \"{remark}\"");
@@ -68,30 +66,25 @@ public sealed class XrayService : IDisposable
     {
         var output = await RunKnifeAsync("subs show");
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(l => l.Trim())
-            .Where(l => l.Length > 0)
-            .ToList();
+            .Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
     }
 
     // ─────────────────────── 拉取 + 测速择优 ───────────────────────
 
-    /// <summary>拉取全部订阅（内置 + 外部），然后测速择优生成 valid_nodes.txt。</summary>
+    /// <summary>拉取全部订阅并测速择优，生成 valid_nodes.txt。</summary>
     public async Task<int> RefreshAndPrepareAsync(int topN = 10)
     {
-        // 1. 从所有启用的订阅拉取节点到本地数据库
         await RunKnifeAsync("subs fetch --all");
 
         var resultsPath = Path.Combine(_workingDir, "results.csv");
         var validPath = Path.Combine(_workingDir, "valid_nodes.txt");
 
-        // 2. 直接从数据库测速（--from-db 免去导出中间文件）
         await RunKnifeAsync(
             $"http --from-db --speedtest --sort --type csv -o \"{resultsPath}\" --timeout 60");
 
         if (!File.Exists(resultsPath))
             throw new FileNotFoundException("测速结果文件未生成", resultsPath);
 
-        // 3. 按速度降序取前 topN 的节点链接
         var validLinks = File.ReadLines(resultsPath)
             .Skip(1)
             .Where(l => !string.IsNullOrWhiteSpace(l))
@@ -115,24 +108,21 @@ public sealed class XrayService : IDisposable
 
     // ─────────────────────── 自动更新定时器 ───────────────────────
 
-    /// <summary>开启自动更新，按指定小时数周期刷新订阅并重新择优。</summary>
     public void EnableAutoUpdate(int intervalHours, int topN)
     {
         DisableAutoUpdate();
         if (intervalHours <= 0) return;
 
         _autoUpdateEnabled = true;
-        _autoUpdateTimer = new System.Timers.Timer(TimeSpan.FromHours(intervalHours).TotalMilliseconds)
-        {
-            AutoReset = true
-        };
+        _autoUpdateTimer = new System.Timers.Timer(
+            TimeSpan.FromHours(intervalHours).TotalMilliseconds) { AutoReset = true };
         _autoUpdateTimer.Elapsed += async (_, _) =>
         {
             if (!_autoUpdateEnabled) return;
             try
             {
                 await RefreshAndPrepareAsync(topN);
-                LogReceived?.Invoke($"[自动更新] {DateTime.Now:HH:mm} 订阅已刷新，节点已重新择优。");
+                LogReceived?.Invoke($"[自动更新] {DateTime.Now:HH:mm} 订阅已刷新并重新择优。");
             }
             catch (Exception ex)
             {
@@ -160,6 +150,7 @@ public sealed class XrayService : IDisposable
         if (!File.Exists(validPath))
             throw new FileNotFoundException("未找到 valid_nodes.txt，请先刷新订阅并测速。", validPath);
 
+        // 注意：v11+ 使用 proxy inbound；旧版使用 proxy
         var psi = new ProcessStartInfo
         {
             FileName = _knifePath,
@@ -194,7 +185,6 @@ public sealed class XrayService : IDisposable
 
     private static string? ExtractRemark(string subsLine)
     {
-        // subs show 输出格式通常为: [remark] url 或类似结构；这里做保守提取
         var idx = subsLine.IndexOf(']');
         if (idx > 0 && subsLine.StartsWith("["))
             return subsLine.Substring(1, idx - 1);
