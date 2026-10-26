@@ -342,3 +342,5 @@ ASALocalRun/
 healthchecksdb
 
 MaskFiles/
+# Xray 二进制由 CI 下载，不提交到仓库
+Plain Craft Launcher 2/Resources/Xray/*.exe
