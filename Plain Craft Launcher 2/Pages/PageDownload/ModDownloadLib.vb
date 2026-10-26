@@ -179,7 +179,8 @@ Public Module ModDownloadLib
                 End If
                 Dim JarUrl As String = Instance.JsonObject("downloads")("server")("url")
                 Dim Checker As New FileChecker With {.MinSize = 1024, .ActualSize = If(Instance.JsonObject("downloads")("server")("size"), -1), .Hash = Instance.JsonObject("downloads")("server")("sha1")}
-                Task.Output = New List(Of NetFile) From {New NetFile(DlSourceLauncherOrMetaGet(JarUrl), VersionFolder & Id & "-server.jar", Checker)}
+                ' ★ 加速：服务端 jar 是二进制文件
+                Task.Output = New List(Of NetFile) From {New NetFile(DlSourceLauncherOrMetaGet(JarUrl), VersionFolder & Id & "-server.jar", Checker, UseAcceleration:=True)}
                 '添加启动脚本
                 Dim Bat As String =
 $"@echo off
@@ -502,7 +503,8 @@ pause"
                 Logger.Warn(ex, $"获取 OptiFine {DownloadInfo.DisplayName} 官方下载地址失败")
             End Try
             '构造文件请求
-            Task.Output = New List(Of NetFile) From {New NetFile(Sources.ToArray, Target, New FileChecker With {.MinSize = 300 * 1024})}
+            ' ★ 加速：OptiFine 主文件是安装器 JAR
+            Task.Output = New List(Of NetFile) From {New NetFile(Sources.ToArray, Target, New FileChecker With {.MinSize = 300 * 1024}, UseAcceleration:=True)}
         End Sub) With {.ProgressWeight = 8})
         Loaders.Add(New LoaderDownload("下载 OptiFine 主文件", New List(Of NetFile)) With {.ProgressWeight = 8})
         Loaders.Add(New LoaderTask(Of List(Of NetFile), Boolean)("等待原版下载",
@@ -654,7 +656,8 @@ Retry:
             End Try
             Task.Progress = 0.9
             '构造文件请求
-            Task.Output = New List(Of NetFile) From {New NetFile(Sources.ToArray, TargetFolder, New FileChecker With {.MinSize = 64 * 1024})}
+            ' ★ 加速：OptiFine 主文件是安装器 JAR
+            Task.Output = New List(Of NetFile) From {New NetFile(Sources.ToArray, TargetFolder, New FileChecker With {.MinSize = 64 * 1024}, UseAcceleration:=True)}
         End Sub) With {.ProgressWeight = 6})
         '下载
         Loaders.Add(New LoaderDownload("下载 OptiFine 主文件", New List(Of NetFile)) With {.ProgressWeight = 10, .Block = True})
@@ -762,7 +765,8 @@ Retry:
                 '官方源
                 Address.Add("http://jenkins.liteloader.com/job/LiteLoaderInstaller%20" & DownloadInfo.Inherit & "/lastSuccessfulBuild/artifact/" & If(DownloadInfo.Inherit = "1.8", "ant/dist/", "build/libs/") & DownloadInfo.FileName)
             End If
-            Loaders.Add(New LoaderDownload("下载主文件", New List(Of NetFile) From {New NetFile(Address.ToArray, Target, New FileChecker With {.MinSize = 1024 * 1024})}) With {.ProgressWeight = 15})
+            ' ★ 加速：LiteLoader 安装器是 JAR
+            Loaders.Add(New LoaderDownload("下载主文件", New List(Of NetFile) From {New NetFile(Address.ToArray, Target, New FileChecker With {.MinSize = 1024 * 1024}, UseAcceleration:=True)}) With {.ProgressWeight = 15})
             '启动
             Dim Loader As New LoaderCombo(Of DlLiteLoaderListEntry)("LiteLoader " & Id & " 安装器下载", Loaders) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
             Loader.Start(DownloadInfo)
@@ -899,16 +903,18 @@ Retry:
                 'NeoForge
                 Dim NeoForge As DlNeoForgeListEntry = Info
                 Dim Url As String = NeoForge.UrlBase & "-installer.jar"
+                ' ★ 加速：NeoForge 安装器是 JAR
                 Files.Add(New NetFile({
                     Url.Replace("maven.neoforged.net/releases", "bmclapi2.bangbang93.com/maven"), Url
-                }, Target, New FileChecker With {.MinSize = 64 * 1024}))
+                }, Target, New FileChecker With {.MinSize = 64 * 1024}, UseAcceleration:=True))
             Else
                 'Forge
                 Dim Forge As DlForgeVersionEntry = Info
+                ' ★ 加速：Forge 安装器是 JAR
                 Files.Add(New NetFile({
                     $"https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/{Forge.Inherit}-{Forge.FileVersion}/forge-{Forge.Inherit}-{Forge.FileVersion}-{Forge.Category}.{Forge.FileExtension}",
                     $"https://files.minecraftforge.net/maven/net/minecraftforge/forge/{Forge.Inherit}-{Forge.FileVersion}/forge-{Forge.Inherit}-{Forge.FileVersion}-{Forge.Category}.{Forge.FileExtension}"
-                }, Target, New FileChecker With {.MinSize = 64 * 1024, .Hash = Forge.Hash}))
+                }, Target, New FileChecker With {.MinSize = 64 * 1024, .Hash = Forge.Hash}, UseAcceleration:=True))
             End If
 
             '构造加载器
@@ -935,9 +941,9 @@ Retry:
         '添加 Java Wrapper 作为主 Jar
         Dim Arguments As String
         If UseJavaWrapper AndAlso Not Settings.Get(Of Boolean)("LaunchAdvanceDisableJLW") Then
-            Arguments = $"-Doolloo.jlw.tmpdir=""{PathUtils.RemoveSlashSuffix(PathPure.Value)}"" -cp ""{PathTemp}Cache\forge_installer.jar;{Target}"" -jar ""{LaunchUtils.ExtractPatch("Launch\JavaWrapper.jar", PathPure.Value)}"" com.bangbang93.ForgeInstaller ""{McFolder}"
+            Arguments = $"-Doolloo.jlw.tmpdir=""{PathUtils.RemoveSlashSuffix(PathPure.Value)}"" -cp ""{PathTemp}Cache\forge_installer.jar;{Target}"" -jar ""{LaunchUtils.ExtractPatch("Launch\JavaWrapper.jar", PathPure.Value)}"" com.bangbang93.ForgeInstaller ""{McFolder}""
         Else
-            Arguments = $"-cp ""{PathTemp}Cache\forge_installer.jar;{Target}"" com.bangbang93.ForgeInstaller ""{McFolder}"
+            Arguments = $"-cp ""{PathTemp}Cache\forge_installer.jar;{Target}"" com.bangbang93.ForgeInstaller ""{McFolder}""
         End If
         If Java.Version.Major >= 9 Then Arguments = "--add-exports cpw.mods.bootstraplauncher/cpw.mods.bootstraplauncher=ALL-UNNAMED " & Arguments
         '开始启动
@@ -1114,18 +1120,20 @@ Retry:
                 'NeoForge
                 Dim Neo As DlNeoForgeListEntry = Info
                 Dim Url As String = Neo.UrlBase & "-installer.jar"
+                ' ★ 加速：NeoForge 安装器是 JAR
                 Files.Add(New NetFile({
                     Url.Replace("maven.neoforged.net/releases", "bmclapi2.bangbang93.com/maven"), Url
-                }, InstallerAddress, New FileChecker With {.MinSize = 64 * 1024}))
+                }, InstallerAddress, New FileChecker With {.MinSize = 64 * 1024}, UseAcceleration:=True))
             Else
                 'Forge
                 Dim Forge As DlForgeVersionEntry = Info
                 Dim FileName As String =
                     $"{Forge.Inherit.Replace("-", "_")}-{Forge.FileVersion}/forge-{Forge.Inherit.Replace("-", "_")}-{Forge.FileVersion}-{Forge.Category}.{Forge.FileExtension}"
+                ' ★ 加速：Forge 安装器是 JAR
                 Files.Add(New NetFile({
                     $"https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/{FileName}",
                     $"https://files.minecraftforge.net/maven/net/minecraftforge/forge/{FileName}"
-                }, InstallerAddress, New FileChecker With {.MinSize = 64 * 1024, .Hash = Forge.Hash}))
+                }, InstallerAddress, New FileChecker With {.MinSize = 64 * 1024, .Hash = Forge.Hash}, UseAcceleration:=True))
             End If
             Task.Output = Files
         End Sub) With {.ProgressWeight = 0.5, .Show = False})
@@ -1598,7 +1606,8 @@ Retry:
             'BMCLAPI 不支持 Fabric Installer 下载
             Dim Address As New List(Of String)
             Address.Add(Url)
-            Loaders.Add(New LoaderDownload("下载主文件", New List(Of NetFile) From {New NetFile(Address.ToArray, Target, New FileChecker With {.MinSize = 1024 * 64})}) With {.ProgressWeight = 15})
+            ' ★ 加速：Fabric 安装器是 JAR
+            Loaders.Add(New LoaderDownload("下载主文件", New List(Of NetFile) From {New NetFile(Address.ToArray, Target, New FileChecker With {.MinSize = 1024 * 64}, UseAcceleration:=True)}) With {.ProgressWeight = 15})
             '启动
             Dim Loader As New LoaderCombo(Of JObject)("Fabric " & Version & " 安装器下载", Loaders) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
             Loader.Start(DownloadInfo)
