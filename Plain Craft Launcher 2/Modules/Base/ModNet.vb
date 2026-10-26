@@ -7,17 +7,19 @@ Public Module ModNet
     ''' <summary>
     ''' 发送一次网络请求并获取返回内容。
     ''' </summary>
+    ''' <param name="isDownload">是否为文件下载请求。若为 True，则在加速开启时使用 Xray 代理通道。</param>
     Public Function NetRequestByClient(Url As String, Optional Method As HttpMethod = Nothing,
             Optional Content As Object = Nothing, Optional ContentType As String = Nothing, Optional Accept As String = "*/*",
             Optional Timeout As Integer = 25000, Optional Headers As String(,) = Nothing, Optional RequireJson As Boolean = False,
-            Optional Encoding As Encoding = Nothing, Optional SimulateBrowserHeaders As Boolean = False, Optional MakeLog As Boolean = True) As String
+            Optional Encoding As Encoding = Nothing, Optional SimulateBrowserHeaders As Boolean = False, Optional MakeLog As Boolean = True,
+            Optional isDownload As Boolean = False) As String
         If Method Is Nothing Then Method = HttpMethod.Get
         If MakeLog Then Logger.Info($"发起网络请求（{Method.Method}，{Url}），最大超时 {Timeout}")
         Try
             Dim HeaderDictionary = If(Headers, {}).ToDictionary
             If ContentType IsNot Nothing Then HeaderDictionary("Content-Type") = ContentType
             If Accept IsNot Nothing Then HeaderDictionary("Accept") = Accept
-            Dim Result = SendRequest(Url, Method, Content, HeaderDictionary, Timeout:=Timeout, Encoding:=Encoding, SimulateBrowserHeaders:=SimulateBrowserHeaders).GetString(Encoding)
+            Dim Result = SendRequest(Url, Method, Content, HeaderDictionary, Timeout:=Timeout, Encoding:=Encoding, SimulateBrowserHeaders:=SimulateBrowserHeaders, isDownload:=isDownload).GetString(Encoding)
             '检查结果是否为完整 JSON（在 #6683 中可能返回空，在被 GFW 截断时可能不完整）
             '在此处检查并报错，可以让 NetRequestByClientRetry 等方法进行重试
             If RequireJson Then
@@ -41,10 +43,12 @@ Public Module ModNet
     ''' 会进行至多 45 秒 3 次的尝试，允许最长 30s 的超时。
     ''' </summary>
     ''' <param name="BackupUrl">如果第一次尝试失败，换用的备用 URL。</param>
+    ''' <param name="isDownload">是否为文件下载请求。若为 True，则在加速开启时使用 Xray 代理通道。</param>
     Public Function NetRequestByClientRetry(Url As String, Optional Method As HttpMethod = Nothing, Optional BackupUrl As String = Nothing,
             Optional Content As Object = Nothing, Optional ContentType As String = Nothing, Optional Accept As String = "*/*",
             Optional Headers As String(,) = Nothing, Optional RequireJson As Boolean = False,
-            Optional Encoding As Encoding = Nothing, Optional SimulateBrowserHeaders As Boolean = False) As String
+            Optional Encoding As Encoding = Nothing, Optional SimulateBrowserHeaders As Boolean = False,
+            Optional isDownload As Boolean = False) As String
         Dim RetryCount As Integer = 0
         Dim RetryException As Exception = Nothing
         Dim StartTime As Long = GetTimeMs()
@@ -52,15 +56,15 @@ Public Module ModNet
 Retry:
             Select Case RetryCount
                 Case 0 '正常尝试
-                    Return NetRequestByClient(Url, Method, Content, ContentType, Accept, 10000, Headers, RequireJson, Encoding, SimulateBrowserHeaders)
+                    Return NetRequestByClient(Url, Method, Content, ContentType, Accept, 10000, Headers, RequireJson, Encoding, SimulateBrowserHeaders, isDownload:=isDownload)
                 Case 1 '慢速重试
                     Thread.Sleep(500)
-                    Return NetRequestByClient(Url, Method, Content, ContentType, Accept, 30000, Headers, RequireJson, Encoding, SimulateBrowserHeaders)
+                    Return NetRequestByClient(Url, Method, Content, ContentType, Accept, 30000, Headers, RequireJson, Encoding, SimulateBrowserHeaders, isDownload:=isDownload)
                 Case Else '快速重试
                     If GetTimeMs() - StartTime > 5500 Then
                         '若前两次加载耗费 5 秒以上，才进行重试
                         Thread.Sleep(500)
-                        Return NetRequestByClient(Url, Method, Content, ContentType, Accept, 4000, Headers, RequireJson, Encoding, SimulateBrowserHeaders)
+                        Return NetRequestByClient(Url, Method, Content, ContentType, Accept, 4000, Headers, RequireJson, Encoding, SimulateBrowserHeaders, isDownload:=isDownload)
                     Else
                         Throw RetryException
                     End If
@@ -93,7 +97,8 @@ Retry:
     Public Function NetRequestByClientMultiple(Url As String, Optional Method As HttpMethod = Nothing, Optional ThreadCount As Integer = 3,
             Optional Content As Object = Nothing, Optional ContentType As String = Nothing, Optional Accept As String = "*/*",
             Optional Headers As String(,) = Nothing, Optional RequireJson As Boolean = False, Optional Timeout As Integer = 25000,
-            Optional Encoding As Encoding = Nothing, Optional SimulateBrowserHeaders As Boolean = False) As String
+            Optional Encoding As Encoding = Nothing, Optional SimulateBrowserHeaders As Boolean = False,
+            Optional isDownload As Boolean = False) As String
         Dim Threads As New List(Of Thread)
         Dim RequestResult = Nothing
         Dim RequestEx As Exception = Nothing
@@ -102,7 +107,7 @@ Retry:
             Dim th As New Thread(
             Sub()
                 Try
-                    RequestResult = NetRequestByClient(Url, Method, Content, ContentType, Accept, Timeout, Headers, RequireJson, Encoding, SimulateBrowserHeaders)
+                    RequestResult = NetRequestByClient(Url, Method, Content, ContentType, Accept, Timeout, Headers, RequireJson, Encoding, SimulateBrowserHeaders, isDownload:=isDownload)
                 Catch ex As Exception
                     FailCount += 1
                     RequestEx = ex
@@ -141,16 +146,19 @@ RequestFinished:
     ''' 以多线程下载网页文件的方式获取内容。
     ''' 不支持缓存协商；若需缓存协商，需要换用 NetRequestByClient。
     ''' </summary>
-    Public Function NetRequestByLoader(Url As String, Optional Timeout As Integer = 45000, Optional IsJson As Boolean = False, Optional SimulateBrowserHeaders As Boolean = False) As String
-        Return NetRequestByLoader({Url}, Timeout, IsJson, SimulateBrowserHeaders)
+    ''' <param name="isDownload">是否为文件下载请求。若为 True，则在加速开启时使用 Xray 代理通道。</param>
+    Public Function NetRequestByLoader(Url As String, Optional Timeout As Integer = 45000, Optional IsJson As Boolean = False, Optional SimulateBrowserHeaders As Boolean = False,
+            Optional isDownload As Boolean = False) As String
+        Return NetRequestByLoader({Url}, Timeout, IsJson, SimulateBrowserHeaders, isDownload)
     End Function
     ''' <summary>
     ''' 以多线程下载网页文件的方式获取内容。
     ''' 不支持缓存协商；若需缓存协商，需要换用 NetRequestByClient。
     ''' </summary>
-    Public Function NetRequestByLoader(Urls As IEnumerable(Of String), Optional Timeout As Integer = 45000, Optional IsJson As Boolean = False, Optional SimulateBrowserHeaders As Boolean = False) As String
+    Public Function NetRequestByLoader(Urls As IEnumerable(Of String), Optional Timeout As Integer = 45000, Optional IsJson As Boolean = False, Optional SimulateBrowserHeaders As Boolean = False,
+            Optional isDownload As Boolean = False) As String
         Dim Temp As String = RequestTaskTempFolder() & "download.txt"
-        Dim NewTask As New LoaderDownload("源码获取 " & GetUuid() & "#", New List(Of NetFile) From {New NetFile(Urls, Temp, New FileChecker With {.IsJson = IsJson}, SimulateBrowserHeaders)})
+        Dim NewTask As New LoaderDownload("源码获取 " & GetUuid() & "#", New List(Of NetFile) From {New NetFile(Urls, Temp, New FileChecker With {.IsJson = IsJson}, SimulateBrowserHeaders, UseAcceleration:=isDownload)})
         Try
             NewTask.WaitForExitTime(Timeout, TimeoutMessage:="连接服务器超时（第一下载源：" & Urls.First & "）")
             Dim Result = FileUtils.ReadAsString(Temp)
@@ -174,7 +182,8 @@ RequestFinished:
         Dim RetryCount As Integer = 0
 Retry:
         Try
-            FileUtils.Write(LocalPath, SendRequest(Url, HttpMethod.Get, SimulateBrowserHeaders:=SimulateBrowserHeaders))
+            '文件下载路径强制走加速通道（若已启用）
+            FileUtils.Write(LocalPath, SendRequest(Url, HttpMethod.Get, SimulateBrowserHeaders:=SimulateBrowserHeaders, isDownload:=True))
         Catch ex As Exception
             FileUtils.Delete(LocalPath)
             ex.ThrowIfCanceled()
@@ -198,7 +207,8 @@ Retry:
     ''' <param name="Urls">文件的 Url 列表。</param>
     ''' <param name="LocalPath">下载的本地地址。</param>
     Public Sub NetDownloadByLoader(Urls As IEnumerable(Of String), LocalPath As String, Optional LoaderToSyncProgress As LoaderBase = Nothing, Optional Check As FileChecker = Nothing, Optional SimulateBrowserHeaders As Boolean = False)
-        Dim NewTask As New LoaderDownload($"文件下载 {GetUuid()}#", New List(Of NetFile) From {New NetFile(Urls, LocalPath, Check, SimulateBrowserHeaders)})
+        '文件下载路径强制走加速通道（若已启用）
+        Dim NewTask As New LoaderDownload($"文件下载 {GetUuid()}#", New List(Of NetFile) From {New NetFile(Urls, LocalPath, Check, SimulateBrowserHeaders, UseAcceleration:=True)})
         Try
             NewTask.WaitForExit(LoaderToSyncProgress:=LoaderToSyncProgress)
         Catch ex As Exception
@@ -215,20 +225,29 @@ Retry:
     '基础请求函数
     Private Function SendRequest(Url As String, Method As HttpMethod,
             Optional Content As Object = Nothing, Optional Headers As Dictionary(Of String, String) = Nothing,
-            Optional SimulateBrowserHeaders As Boolean = False, Optional Timeout As Integer = 25000, Optional Encoding As Encoding = Nothing) As Byte()
+            Optional SimulateBrowserHeaders As Boolean = False, Optional Timeout As Integer = 25000, Optional Encoding As Encoding = Nothing,
+            Optional isDownload As Boolean = False) As Byte()
         If RunInUi() AndAlso Not Url.Contains("//127.") Then Throw New Exception("在 UI 线程执行了网络请求")
         Dim Request As HttpRequestMessage = Nothing, CancelToken As CancellationTokenSource = Nothing, Response As HttpResponseMessage = Nothing
         Try
-            '构建 RequestClient
-            Directory.CreateDirectory(PathTemp & "Cache\Http\")
-            SyncLock RequestClientLock
-                If RequestClient Is Nothing Then '延迟初始化，以避免在程序启动前加载 CacheCow 导致 DLL 加载失败
-                    RequestClient = CacheCow.Client.ClientExtensions.CreateClient(New CacheCow.Client.FileCacheStore.FileStore(PathTemp & "Cache/Http/"), New HttpClientHandler With {
-                        .AutomaticDecompression = DecompressionMethods.Deflate Or DecompressionMethods.GZip,
-                        .UseCookies = False '不设为 False 就不能从 Header 手动传入 Cookies
-                    })
-                End If
-            End SyncLock
+            '构建 RequestClient：下载请求走加速工厂，其余走原有缓存客户端
+            Dim CurrentClient As HttpClient
+            If isDownload Then
+                '下载路径：由 DownloadHttpClientFactory 提供（加速开启时走 SOCKS5，否则回退到原有代理逻辑）
+                CurrentClient = DownloadHttpClientFactory.GetDownloadClient()
+            Else
+                '非下载路径：完全保持原有 CacheCow 缓存客户端，不受加速开关影响
+                Directory.CreateDirectory(PathTemp & "Cache\Http\")
+                SyncLock RequestClientLock
+                    If RequestClient Is Nothing Then '延迟初始化，以避免在程序启动前加载 CacheCow 导致 DLL 加载失败
+                        RequestClient = CacheCow.Client.ClientExtensions.CreateClient(New CacheCow.Client.FileCacheStore.FileStore(PathTemp & "Cache/Http/"), New HttpClientHandler With {
+                            .AutomaticDecompression = DecompressionMethods.Deflate Or DecompressionMethods.GZip,
+                            .UseCookies = False '不设为 False 就不能从 Header 手动传入 Cookies
+                        })
+                    End If
+                End SyncLock
+                CurrentClient = RequestClient
+            End If
             '构建请求
             Url = SecretCdnSign(Url)
             Request = New HttpRequestMessage(Method, Url)
@@ -256,7 +275,7 @@ Retry:
                 CancelToken?.Dispose() : CancelToken = New CancellationTokenSource(Timeout)
                 Dim ClonedRequest As HttpRequestMessage = Request.Clone() 'HttpRequestMessage 只能发送一次，重试时需要克隆一个新的
                 Try
-                    Response = RequestClient.SendAsync(ClonedRequest, HttpCompletionOption.ResponseHeadersRead, CancelToken.Token).GetResultWithTimeout(CancelToken, Timeout)
+                    Response = CurrentClient.SendAsync(ClonedRequest, HttpCompletionOption.ResponseHeadersRead, CancelToken.Token).GetResultWithTimeout(CancelToken, Timeout)
                 Finally
                     ClonedRequest.Dispose()
                 End Try
@@ -693,6 +712,11 @@ Retry:
         ''' 是否模拟浏览器的 UserAgent 和 Referer。
         ''' </summary>
         Public SimulateBrowserHeaders As Boolean
+        ''' <summary>
+        ''' 是否在加速开启时使用 Xray 代理通道下载该文件。
+        ''' 仅当加速已启用且代理进程运行时才生效；否则回退到普通通道。
+        ''' </summary>
+        Public UseAcceleration As Boolean = False
 
         ''' <summary>
         ''' 上次记速时的时间。
@@ -786,7 +810,8 @@ Retry:
         ''' 新建一个需要下载的文件。
         ''' </summary>
         ''' <param name="LocalPath">包含文件名的本地地址。</param>
-        Public Sub New(Urls As IEnumerable(Of String), LocalPath As String, Optional Checker As FileChecker = Nothing, Optional SimulateBrowserHeaders As Boolean = False)
+        ''' <param name="UseAcceleration">若为 True，则在加速开启时使用 Xray 代理通道下载该文件。</param>
+        Public Sub New(Urls As IEnumerable(Of String), LocalPath As String, Optional Checker As FileChecker = Nothing, Optional SimulateBrowserHeaders As Boolean = False, Optional UseAcceleration As Boolean = False)
             Dim Sources As New List(Of NetSource)
             Dim Count As Integer = 0
             Urls = Urls.Distinct.ToArray
@@ -798,6 +823,7 @@ Retry:
             Me.LocalPath = LocalPath
             Me.Check = Checker
             Me.SimulateBrowserHeaders = SimulateBrowserHeaders
+            Me.UseAcceleration = UseAcceleration
             Me.LocalName = PathUtils.GetLastPart(LocalPath)
         End Sub
 
@@ -916,7 +942,9 @@ StartThread:
                 CancelToken = New CancellationTokenSource(Timeout)
                 If Not Th.IsFirstThread Then HttpRequest.Headers.Range = New Headers.RangeHeaderValue(Th.DownloadStart, Nothing)
                 Dim ContentLength As Long = 0
-                Response = ThreadClient.SendAsync(HttpRequest, HttpCompletionOption.ResponseHeadersRead, CancelToken.Token).GetResultWithTimeout(CancelToken, Timeout)
+                '根据本文件的加速开关选择 HttpClient：开启加速时用下载专用工厂，否则沿用原有 ThreadClient
+                Dim ThreadHttpClient As HttpClient = If(UseAcceleration, DownloadHttpClientFactory.GetDownloadClient(), ThreadClient)
+                Response = ThreadHttpClient.SendAsync(HttpRequest, HttpCompletionOption.ResponseHeadersRead, CancelToken.Token).GetResultWithTimeout(CancelToken, Timeout)
                 If Not Response.IsSuccessStatusCode Then '状态码检查
                     Throw New HttpRequestCodeException($"错误码 {Response.StatusCode} ({CInt(Response.StatusCode)})，{Th.Source.Url}", Response.StatusCode, Nothing)
                 End If
